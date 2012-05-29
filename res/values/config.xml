@@ -122,4 +122,8 @@
          Leave empty to disable the feature. -->
     <string name="voice_quality_param"></string>
 
+    <!-- True if the device has a fixed keyboard (as oposite to a sliding one) so keyboard is
+         always open. Will modify proximity checking behaviour. -->
+    <bool name="config_device_has_fixed_keyboard">false</bool>
+
 </resources>
