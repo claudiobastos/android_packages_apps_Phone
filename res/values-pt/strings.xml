@@ -720,5 +720,7 @@
     <string name="mwi_notification_title">Indicador de Mensagem de Espera</string>
     <string name="mwi_notification_summary">Exibir indicador de mensagem de espera para notificações de correio de voz</string>
 
+    <string name="noise_suppression_title">Supressão de ruído</string>
+    <string name="noise_suppression_summary">Ativar supressão de ruído em ligações</string>
 </resources>
 
