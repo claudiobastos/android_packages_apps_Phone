@@ -37,6 +37,9 @@ public final class AccelerometerListener {
 
     private SensorManager mSensorManager;
     private Sensor mSensor;
+    
+    //If enabled or not (registered)
+    private boolean mEnable = false;
 
     // mOrientation is the orientation value most recently reported to the client.
     private int mOrientation;
@@ -53,10 +56,16 @@ public final class AccelerometerListener {
     public static final int ORIENTATION_VERTICAL = 1;
     public static final int ORIENTATION_HORIZONTAL = 2;
 
+    public static final int ORIENTATION_STANDINGUP = 3;
+    public static final int ORIENTATION_UPSIDEDOWN = 4;
+    public static final int ORIENTATION_SIDED = 5;
+    public static final int ORIENTATION_FACEUP = 6;
+    public static final int ORIENTATION_FACEDOWN = 7;
+
     private static final int ORIENTATION_CHANGED = 1234;
 
     private static final int VERTICAL_DEBOUNCE = 100;
-    private static final int HORIZONTAL_DEBOUNCE = 500;
+    private static final int HORIZONTAL_DEBOUNCE = 400;
     private static final double VERTICAL_ANGLE = 50.0;
 
     public interface OrientationListener {
@@ -67,6 +76,10 @@ public final class AccelerometerListener {
         mListener = listener;
         mSensorManager = (SensorManager)context.getSystemService(Context.SENSOR_SERVICE);
         mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+    }
+    
+    public boolean isEnabled(){
+    	return mEnable;
     }
 
     public void enable(boolean enable) {
@@ -82,6 +95,7 @@ public final class AccelerometerListener {
                 mHandler.removeMessages(ORIENTATION_CHANGED);
             }
         }
+        mEnable = enable;
     }
 
     private void setOrientation(int orientation) {
@@ -102,8 +116,11 @@ public final class AccelerometerListener {
                 mPendingOrientation = orientation;
                 Message m = mHandler.obtainMessage(ORIENTATION_CHANGED);
                 // set delay to our debounce timeout
-                int delay = (orientation == ORIENTATION_VERTICAL ? VERTICAL_DEBOUNCE
-                                                                 : HORIZONTAL_DEBOUNCE);
+                int delay = HORIZONTAL_DEBOUNCE;
+                if( (orientation == ORIENTATION_STANDINGUP )
+                	|| (orientation == ORIENTATION_UPSIDEDOWN)){
+                	delay = VERTICAL_DEBOUNCE;
+                }
                 mHandler.sendMessageDelayed(m, delay);
             } else {
                 // no message is pending
@@ -124,9 +141,27 @@ public final class AccelerometerListener {
         // compute the vertical angle
         double angle = Math.atan2(xy, z);
         // convert to degrees
-        angle = angle * 180.0 / Math.PI;
-        int orientation = (angle >  VERTICAL_ANGLE ? ORIENTATION_VERTICAL : ORIENTATION_HORIZONTAL);
-        if (VDEBUG) Log.d(TAG, "angle: " + angle + " orientation: " + orientation);
+        angle = angle * 180.0 / Math.PI;        
+        int orientation = ( (angle > VERTICAL_ANGLE) && (angle > (180-VERTICAL_ANGLE)) ) ? ORIENTATION_VERTICAL : ORIENTATION_HORIZONTAL ;
+        
+        if( (angle > VERTICAL_ANGLE) && (angle > (180-VERTICAL_ANGLE)) ){
+        	//vertical
+        	if(y > 8.5){
+        		orientation = ORIENTATION_STANDINGUP;
+        	} else if (y < -8.5) {
+        		orientation = ORIENTATION_UPSIDEDOWN;
+        	}
+        } else {
+        	//horizontal
+        	if(z < -8.5){
+        		orientation = ORIENTATION_FACEDOWN;
+        	} else if (z > 8.5) {
+        		orientation = ORIENTATION_FACEUP;
+        	} else {
+        		orientation = ORIENTATION_SIDED;
+        	}
+        }
+        if (VDEBUG) Log.d(TAG, "angle: " + angle + " orientation (final): " + orientation);
         setOrientation(orientation);
     }
 
@@ -151,6 +186,13 @@ public final class AccelerometerListener {
                             (mOrientation == ORIENTATION_HORIZONTAL ? "horizontal"
                                 : (mOrientation == ORIENTATION_VERTICAL ? "vertical"
                                     : "unknown")));
+                        Log.d(TAG, "new orientationExtra: " + 
+                            (mOrientation == ORIENTATION_STANDINGUP ? "standing up" 
+                            : (mOrientation == ORIENTATION_UPSIDEDOWN ? "upside down"
+                              : (mOrientation == ORIENTATION_FACEDOWN ? "face down"
+                                : (mOrientation == ORIENTATION_SIDED ? "sided"
+                                  : (mOrientation == ORIENTATION_FACEUP ? "face up"
+                                  : "unknow"))))));                        
                     }
                     mListener.orientationChanged(mOrientation);
                 }

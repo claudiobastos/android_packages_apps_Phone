@@ -430,6 +430,10 @@ public class PhoneUtils {
             return PreferenceManager.getDefaultSharedPreferences(context)
                     .getBoolean("keep_proximity_sensor_on", false);
         }
+        static boolean answerByNaturalMotion(Context context) {
+            return PreferenceManager.getDefaultSharedPreferences(context)
+                    .getBoolean("natural_motion_answer", false);
+        }
     };
 
     static boolean hangupRingingCall(Call ringing) {

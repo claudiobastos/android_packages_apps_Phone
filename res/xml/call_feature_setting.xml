@@ -68,6 +68,7 @@
             android:title="@string/vibrate_45"
             android:persistent="true"
             android:summary="@string/vibrate_45_sum" />
+        <CheckBoxPreference android:key="natural_motion_answer" android:title="@string/natural_motion_answer"/>
     </PreferenceCategory>
 
   <PreferenceCategory

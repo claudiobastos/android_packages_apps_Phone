@@ -54,6 +54,7 @@ import android.telephony.ServiceState;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.widget.Toast;
 
 import com.android.internal.telephony.Call;
 import com.android.internal.telephony.CallManager;
@@ -66,6 +67,12 @@ import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.cdma.TtyIntent;
 import com.android.phone.OtaUtils.CdmaOtaScreenState;
 import com.android.server.sip.SipService;
+
+//for motion call
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 
 /**
  * Top-level Application class for the Phone app.
@@ -243,6 +250,19 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
     private KeyguardManager mKeyguardManager;
     private AccelerometerListener mAccelerometerListener;
     private int mOrientation = AccelerometerListener.ORIENTATION_UNKNOWN;
+    
+    
+    //motion call sensor variables
+    private int mLastOrientation = AccelerometerListener.ORIENTATION_UPSIDEDOWN;
+    private SensorManager mSensorManager;
+    private Sensor mSensor;
+    private boolean isNearFace;
+    private boolean mSensorEnabled = false;
+    private boolean wasAlreadyNotNearFace = false;
+    
+    
+    
+    
 
     private UpdateLock mUpdateLock;
 
@@ -775,6 +795,42 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
     private static String getCallScreenClassName() {
         return InCallScreen.class.getName();
     }
+    
+    
+    /**
+	 * SensorEventListener to listen to Proximity Sensor needed to motion accept
+	 * a call
+	 */
+	SensorEventListener mSensorListener = new SensorEventListener() {
+		public void onSensorChanged(SensorEvent event) {
+			onProximitySensorEvent(event.values[0]);
+			if (event.values[0] > 0) {
+				wasAlreadyNotNearFace = true;
+			}
+		}
+
+		public void onAccuracyChanged(Sensor sensor, int accuracy) {
+			// ignore
+		}
+	};
+
+	private void onProximitySensorEvent(float sensorValue) {
+		isNearFace = (sensorValue > 0) ? false : true;	
+	}
+
+	private void enableProximitySensor(boolean enable) {
+		boolean naturalMotionOn = PhoneUtils.PhoneSettings.answerByNaturalMotion(this);
+		if (enable && naturalMotionOn) {
+			mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+			mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
+			mSensorManager.registerListener(mSensorListener, mSensor,
+					SensorManager.SENSOR_DELAY_NORMAL);
+			mSensorEnabled = true;
+		} else {
+			mSensorManager.unregisterListener(mSensorListener);
+			mSensorEnabled = false;
+		}
+	}    
 
     /**
      * Starts the InCallScreen Activity.
@@ -1207,6 +1263,18 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
                        + ", showingDisc " + showingDisconnectedConnection + ")");
         // keepScreenOn == true means we'll hold a full wake lock:
         requestWakeState(keepScreenOn ? WakeState.FULL : WakeState.SLEEP);
+        
+        //motion phone
+ 		if (isRinging) {
+ 			if (!mAccelerometerListener.isEnabled()) {
+ 				Log.w(LOG_TAG, "Accelerometer wasn't enabled, enabling ");
+ 				mAccelerometerListener.enable(true);
+ 			}
+ 			if (!mSensorEnabled) {
+ 				Log.w(LOG_TAG, "Proximity Sensor wasn't enabled, enabling ");
+ 				enableProximitySensor(true);
+ 			}
+ 		}
     }
 
     /**
@@ -1327,7 +1395,10 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
                 // horizontal, but we do not force it on when we become horizontal until the
                 // proximity sensor goes negative.
                 boolean horizontal =
-                        (mOrientation == AccelerometerListener.ORIENTATION_HORIZONTAL);
+                        (mOrientation == AccelerometerListener.ORIENTATION_HORIZONTAL)
+                        || (mOrientation == AccelerometerListener.ORIENTATION_FACEDOWN)
+                        || (mOrientation == AccelerometerListener.ORIENTATION_FACEUP)
+                        || (mOrientation == AccelerometerListener.ORIENTATION_SIDED);
                 screenOnImmediately |= !isShowingCallScreenForProximity() && horizontal;
 
                 // We do not keep the screen off when dialpad is visible, we are horizontal, and
@@ -1377,6 +1448,38 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
     public void orientationChanged(int orientation) {
         mOrientation = orientation;
         updateProximitySensorMode(mCM.getState());
+        
+        boolean naturalMotionOn = PhoneUtils.PhoneSettings.answerByNaturalMotion(this);
+        if(!naturalMotionOn){
+        	return;
+        }
+        
+        switch(orientation){
+        case AccelerometerListener.ORIENTATION_STANDINGUP:
+        case AccelerometerListener.ORIENTATION_SIDED:
+        case AccelerometerListener.ORIENTATION_FACEDOWN:
+			if (isNearFace) {
+				if (wasAlreadyNotNearFace) {
+					mInCallScreen.internalAnswerCall();
+				} else {
+					//Toast.makeText(this, "NOT wasAlreadyNotNearFace",
+					//		Toast.LENGTH_SHORT).show();
+				}
+			} else {
+				//Toast.makeText(this, "NOT isNearFace", Toast.LENGTH_SHORT)
+				//		.show();
+			}
+        	break;
+        case AccelerometerListener.ORIENTATION_UPSIDEDOWN:
+			Toast.makeText(this, "De cabeça para baixo", Toast.LENGTH_SHORT).show();
+			if ((mLastOrientation == AccelerometerListener.ORIENTATION_UPSIDEDOWN)) {
+				Toast.makeText(this, "Desligando chamada!!!", Toast.LENGTH_LONG).show();
+				mInCallScreen.hangupRingingCall();
+			}
+			break;
+        default:
+        }
+        mLastOrientation = orientation;
     }
 
     /**
@@ -1406,6 +1509,15 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
                 if (!mUpdateLock.isHeld()) {
                     mUpdateLock.acquire();
                 }
+                if (mAccelerometerListener.isEnabled()){ 
+                	if (VDBG) Log.d(LOG_TAG, "turn off Accelerometer");
+                	mAccelerometerListener.enable(false);
+                }
+                if (mSensorEnabled){
+                	if (VDBG) Log.d(LOG_TAG, "turn off Proximity sensor");
+                	enableProximitySensor(false);
+                }
+            
             } else {
                 if (!isShowingCallScreen()) {
                     if (!mUpdateLock.isHeld()) {
